@@ -4,6 +4,8 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <iostream>
+#include <string.h>
 
 #include "alignment.h"
 

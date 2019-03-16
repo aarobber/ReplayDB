@@ -548,7 +548,8 @@ ReplayQueryResult * ReplayDb::NewGames(unsigned int offset, unsigned int numResu
     unsigned int resultBitField = ~((unsigned int)0);
 
     if (onlyWins) {
-        resultBitField = this->resultNames.GetSearchBitField(1, &std::string("win"));
+        std::string sw = "win";
+        resultBitField = this->resultNames.GetSearchBitField(1, &sw);
     }
 
     unsigned int validCount = 0;
@@ -636,8 +637,10 @@ ReplayQueryResult * ReplayDb::Search(unsigned int offset, unsigned int numResult
     unsigned int flipResultBitField = ~((unsigned int)0);
 
     if (onlyWins) {
-        resultBitField = this->resultNames.GetSearchBitField(1, &std::string("win"));
-        flipResultBitField = this->resultNames.GetSearchBitField(1, &std::string("loss"));
+        std::string sw = "win";
+        std::string sl = "loss";
+        resultBitField = this->resultNames.GetSearchBitField(1, &sw);
+        flipResultBitField = this->resultNames.GetSearchBitField(1, &sl);
     }
 
     this->CacheSearchBitField(numCards0, cardIndexes0, numCards1, cardIndexes1);
