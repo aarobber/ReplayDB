@@ -7,6 +7,7 @@
 #include "namedbitfield.h"
 #include "alignment.h"
 #include "replayqueryresult.h"
+#include "stringtable.h"
 
 class ReplayDb {
 public:
@@ -39,6 +40,7 @@ private:
     unsigned int replayRowSz;
 
     unsigned int cardBitFieldByteSize;
+    StringTable stringTable;
 
     
     void CacheSearchBitField(unsigned int numCards0, unsigned int * cardIndexes0, unsigned int numCards1, unsigned int * cardIndexes1);

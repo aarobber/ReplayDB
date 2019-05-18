@@ -8,14 +8,14 @@ using namespace std::chrono;
 
 #define REPLAY_ID_SIZE 18
 #define REPLAY_DATE_SIZE sizeof(unsigned long long) // YYYYMMDDHHMM
-#define REPLAY_RESULTS_DESC_SIZE 7
-#define REPLAY_TITLE_SIZE 256
-#define REPLAY_LINK_SIZE 96
-#define REPLAY_DECK0_SIZE 18
-#define REPLAY_DECK1_SIZE 18
-#define REPLAY_REGION_SIZE 42
-#define REPLAY_AUTHOR_LINK_SIZE 96
-#define REPLAY_AUTHOR_NAME_SIZE 42
+#define REPLAY_RESULTS_DESC_SIZE sizeof(unsigned int)
+#define REPLAY_TITLE_SIZE sizeof(unsigned int)
+#define REPLAY_LINK_SIZE sizeof(unsigned int)
+#define REPLAY_DECK0_SIZE sizeof(unsigned int)
+#define REPLAY_DECK1_SIZE sizeof(unsigned int)
+#define REPLAY_REGION_SIZE sizeof(unsigned int)
+#define REPLAY_AUTHOR_LINK_SIZE sizeof(unsigned int)
+#define REPLAY_AUTHOR_NAME_SIZE sizeof(unsigned int)
 
 #define REPLAY_RANKED_BITS 1
 #define REPLAY_MODE_BITS 7
@@ -34,7 +34,7 @@ struct ReplayBits {
 #define REPLAY_MIN_CAPACITY 1024
 #define REPLAY_GROW_CAPACITY 512
 
-#define ARCHIVE_VERSION_NUMBER 1
+#define ARCHIVE_VERSION_NUMBER 2
 #define ARCHIVE_STAMP (('R' << 0) | ('R' << 8) | ('D' << 16) | ('B' << 24))
 
 void ReplayDb::CacheSearchBitField(unsigned int numCards0, unsigned int * cardIndexes0, unsigned int numCards1, unsigned int * cardIndexes1) {
@@ -150,6 +150,7 @@ struct ArchiveHeader {
     unsigned int modeNamesPos;
     unsigned int sourceNamesPos;
     unsigned int resultNamesPos;
+    unsigned int stringTablePos;
     unsigned int searchTablePos;
     unsigned int replayTablePos;
 };
@@ -175,6 +176,9 @@ void ReplayDb::Save() {
     header.resultNamesPos = sz;
     sz = ROUND_TO_ALIGN(sz + this->resultNames.GetSerializeByteSize());
 
+    header.stringTablePos = sz;
+    sz = ROUND_TO_ALIGN(sz + this->stringTable.GetSerializeByteSize());
+
     unsigned int searchTableSz = this->replayCount * this->searchRowSz;
     header.searchTablePos = sz;
     sz = ROUND_TO_ALIGN(sz + searchTableSz);
@@ -191,6 +195,7 @@ void ReplayDb::Save() {
     this->modeNames.SerializeOut(data + header.modeNamesPos);
     this->sourceNames.SerializeOut(data + header.sourceNamesPos);
     this->resultNames.SerializeOut(data + header.resultNamesPos);
+    this->stringTable.SerializeOut(data + header.stringTablePos);
 
     memcpy(data + header.searchTablePos, this->searchTable, searchTableSz);
     memcpy(data + header.replayTablePos, this->replayTable, replayTableSz);
@@ -219,6 +224,13 @@ bool ReplayDb::Load() {
     fclose(f);
 
     ArchiveHeader * header = (ArchiveHeader *)data;
+    if (header->stamp != ARCHIVE_STAMP) {
+        return false;
+    }
+
+    if (header->version != ARCHIVE_VERSION_NUMBER) {
+        return false;
+    }
 
     if (header->searchRowSz != this->searchRowSz || header->replayRowSz != this->replayRowSz) {
         delete [] data;
@@ -228,6 +240,7 @@ bool ReplayDb::Load() {
     this->modeNames.SerializeIn(data + header->modeNamesPos);
     this->sourceNames.SerializeIn(data + header->sourceNamesPos);
     this->resultNames.SerializeIn(data + header->resultNamesPos);
+    this->stringTable.SerializeIn(data + header->stringTablePos);
 
     this->replayCount = header->replayCount;
     this->replayCapacity = header->replayCount;
@@ -275,10 +288,8 @@ std::string ReplayDb::GetResult(unsigned int replayIndex) {
 
 std::string ReplayDb::GetResultsDesc(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE;
-    char out[REPLAY_RESULTS_DESC_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_RESULTS_DESC_SIZE);
-    out[REPLAY_RESULTS_DESC_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 
@@ -294,18 +305,14 @@ bool ReplayDb::GetRanked(unsigned int replayIndex) {
 
 std::string ReplayDb::GetTitle(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE;
-    char out[REPLAY_TITLE_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_TITLE_SIZE);
-    out[REPLAY_TITLE_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetLink(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE;
-    char out[REPLAY_LINK_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_LINK_SIZE);
-    out[REPLAY_LINK_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetSource(unsigned int replayIndex) {
@@ -315,42 +322,32 @@ std::string ReplayDb::GetSource(unsigned int replayIndex) {
 
 std::string ReplayDb::GetDeck0(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE + REPLAY_LINK_SIZE;
-    char out[REPLAY_DECK0_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_DECK0_SIZE);
-    out[REPLAY_DECK0_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetDeck1(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE + REPLAY_LINK_SIZE + REPLAY_DECK0_SIZE;
-    char out[REPLAY_DECK1_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_DECK1_SIZE);
-    out[REPLAY_DECK1_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetRegion(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE + REPLAY_LINK_SIZE + REPLAY_DECK0_SIZE + REPLAY_DECK1_SIZE;
-    char out[REPLAY_REGION_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_REGION_SIZE);
-    out[REPLAY_REGION_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetAuthorLink(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE + REPLAY_LINK_SIZE + REPLAY_DECK0_SIZE + REPLAY_DECK1_SIZE + REPLAY_REGION_SIZE;
-    char out[REPLAY_AUTHOR_LINK_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_AUTHOR_LINK_SIZE);
-    out[REPLAY_AUTHOR_LINK_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 std::string ReplayDb::GetAuthorName(unsigned int replayIndex) {
     const unsigned char * data = this->replayTable + this->replayRowSz * replayIndex + REPLAY_ID_SIZE + REPLAY_DATE_SIZE + REPLAY_RESULTS_DESC_SIZE + REPLAY_TITLE_SIZE + REPLAY_LINK_SIZE + REPLAY_DECK0_SIZE + REPLAY_DECK1_SIZE + REPLAY_REGION_SIZE + REPLAY_AUTHOR_LINK_SIZE;
-    char out[REPLAY_AUTHOR_NAME_SIZE+1];
-    strncpy(out, (const char *)data, REPLAY_AUTHOR_NAME_SIZE);
-    out[REPLAY_AUTHOR_NAME_SIZE] = 0;
-    return out;
+    unsigned int stringIndex = *((unsigned int *)data);
+    return this->stringTable.GetString(stringIndex);
 }
 
 ReplayDb::ReplayDb(const char * gameName, unsigned int numCards) {
@@ -440,19 +437,25 @@ void ReplayDb::SetReplay(const char * id, unsigned long long date, const char * 
     strncpy((char *)dest, d, sz); \
     dest += sz;
 
+    unsigned int stringIndex;
+#define WRITE_REPLAY_STRING(dest, s) \
+    stringIndex = this->stringTable.StoreString(s); \
+    memcpy(dest, &stringIndex, sizeof(unsigned int)); \
+    dest += sizeof(unsigned int);
+
     WRITE_REPLAY_FIELD(destReplayData, id, REPLAY_ID_SIZE);
 
     *((unsigned long long *)destReplayData) = date;
     destReplayData += sizeof(unsigned long long);
 
-    WRITE_REPLAY_FIELD(destReplayData, resultDesc, REPLAY_RESULTS_DESC_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, title, REPLAY_TITLE_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, link, REPLAY_LINK_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, deck0, REPLAY_DECK0_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, deck1, REPLAY_DECK1_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, region, REPLAY_REGION_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, authorLink, REPLAY_AUTHOR_LINK_SIZE);
-    WRITE_REPLAY_FIELD(destReplayData, authorName, REPLAY_AUTHOR_NAME_SIZE);
+    WRITE_REPLAY_STRING(destReplayData, resultDesc);
+    WRITE_REPLAY_STRING(destReplayData, title)
+    WRITE_REPLAY_STRING(destReplayData, link);
+    WRITE_REPLAY_STRING(destReplayData, deck0);
+    WRITE_REPLAY_STRING(destReplayData, deck1);
+    WRITE_REPLAY_STRING(destReplayData, region);
+    WRITE_REPLAY_STRING(destReplayData, authorLink);
+    WRITE_REPLAY_STRING(destReplayData, authorName);
 
     ReplayBits bits;
     bits.ranked = ranked ? 1 : 0;
