@@ -34,8 +34,16 @@ struct ReplayBits {
 #define REPLAY_MIN_CAPACITY 1024
 #define REPLAY_GROW_CAPACITY 512
 
-#define ARCHIVE_VERSION_NUMBER 2
+#define ARCHIVE_VERSION_NUMBER 3
 #define ARCHIVE_STAMP (('R' << 0) | ('R' << 8) | ('D' << 16) | ('B' << 24))
+
+bool ReplayDb::IsBigEndian() {
+    union {
+        unsigned int i;
+        char c[4];
+    } bint = {0x01020304};
+    return bint.c[0] == 1;
+}
 
 void ReplayDb::CacheSearchBitField(unsigned int numCards0, unsigned int * cardIndexes0, unsigned int numCards1, unsigned int * cardIndexes1) {
     memset(this->cachedSearchBitField, 0, this->searchRowSz);
@@ -45,7 +53,7 @@ void ReplayDb::CacheSearchBitField(unsigned int numCards0, unsigned int * cardIn
         unsigned int byteIndex = index / 8;
         unsigned int bitOffset = index - byteIndex * 8;
 
-        this->cachedSearchBitField[byteIndex] |= (1 << bitOffset);
+        this->cachedSearchBitField[byteIndex] |= (1 << (7-bitOffset));
     }
 
     for (unsigned int a=0; a<numCards1; ++a) {
@@ -53,7 +61,7 @@ void ReplayDb::CacheSearchBitField(unsigned int numCards0, unsigned int * cardIn
         unsigned int byteIndex = index / 8;
         unsigned int bitOffset = index - byteIndex * 8;
 
-        this->cachedSearchBitField[this->cardBitFieldByteSize + byteIndex] |= (1 << bitOffset);
+        this->cachedSearchBitField[this->cardBitFieldByteSize + byteIndex] |= (1 << (7-bitOffset));
     }
 
     unsigned int cards0Pos = 0;
@@ -68,6 +76,106 @@ unsigned int popcount(unsigned int i) {
      i = i - ((i >> 1) & 0x55555555);
      i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
      return (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
+}
+
+#define BYTE_TO_BINARY_STR(b) \
+    ((b) & 0x01 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x02 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x04 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x08 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x10 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x20 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x40 ? "1" : "\x1B[31m0\x1B[0m"), \
+    ((b) & 0x80 ? "1" : "\x1B[31m0\x1B[0m")
+#define BYTE_TO_BINARY_STR_OFF_COLOUR(b) \
+    ((b) & 0x01 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x02 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x04 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x08 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x10 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x20 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x40 ? "1" : "\x1B[35m0\x1B[0m"), \
+    ((b) & 0x80 ? "1" : "\x1B[35m0\x1B[0m")
+#define BYTE_BINARY_STR_PATTERN "%s%s%s%s%s%s%s%s "
+
+void ReplayDb::PrintIndexes(const unsigned int * indexes, unsigned int count) {
+    for (int a=0; a<count; ++a) {
+        if (a > 0) {
+            printf(", ");
+        }
+        printf("%d", indexes[a]);
+    }
+    printf("\n");
+    fflush(stdout);
+}
+
+void ReplayDb::PrintBitString(const unsigned int * bitString, unsigned int count) {
+    printf("0________8________16_______24_______32_______40_______48_______56______\n");
+    for (unsigned int a=0; a<count; ++a) {
+        printf(BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR(bitString[a] & 0xFF));
+        printf(BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitString[a] >> 8) & 0xFF));
+        printf(BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitString[a] >> 16) & 0xFf));
+        printf(BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitString[a] >> 24) & 0xFF));
+        if (a % 2 == 1) {
+            printf(" bits %d-%d\n", (a+1)*32-64, (a+1)*32-1);
+        }
+    }
+    printf("\n");
+    fflush(stdout);
+}
+
+void ReplayDb::PrintCompareBitString(const unsigned int * bitStringA, const unsigned int * bitStringB, unsigned int count) {
+    printf("   0________8________16_______24_______32_______40_______48_______56______\n");
+
+    std::string as = "";
+    std::string bs = "";
+    char tmp[256];
+
+    for (unsigned int a=0; a<count; ++a) {
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR(bitStringA[a] & 0xFF));
+        as += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitStringA[a] >> 8) & 0xFF));
+        as += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitStringA[a] >> 16) & 0xFf));
+        as += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR((bitStringA[a] >> 24) & 0xFF));
+        as += tmp;
+
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR_OFF_COLOUR(bitStringB[a] & 0xFF));
+        bs += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR_OFF_COLOUR((bitStringB[a] >> 8) & 0xFF));
+        bs += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR_OFF_COLOUR((bitStringB[a] >> 16) & 0xFf));
+        bs += tmp;
+
+        sprintf(tmp, BYTE_BINARY_STR_PATTERN, BYTE_TO_BINARY_STR_OFF_COLOUR((bitStringB[a] >> 24) & 0xFF));
+        bs += tmp;
+
+        if (a % 2 == 1) {
+            printf("A: %s bits %d-%d\n", as.c_str(), (a+1)*32-64, (a+1)*32-1);
+            printf("B: %s bits %d-%d\n", bs.c_str(), (a+1)*32-64, (a+1)*32-1);
+            printf("\n");
+            as = "";
+            bs = "";
+        }
+    }
+
+    if (as.length() > 0) {
+        printf("A: %s\n", as.c_str());
+        printf("B: %s\n", bs.c_str());
+        printf("\n");
+        as = "";
+        bs = "";
+    }
+
+    printf("\n");
+    fflush(stdout);
 }
 
 ReplayDb::MatchResult ReplayDb::Match(unsigned int replayIndex, bool flipped, unsigned long long minDate, bool ranked, bool unranked, unsigned int sourcesBitField, unsigned int modesBitField, unsigned int resultBitField) {
@@ -111,9 +219,10 @@ ReplayDb::MatchResult ReplayDb::Match(unsigned int replayIndex, bool flipped, un
     if (!this->resultNames.NameMatchesSearchBitField(resultBitField, bits->result)) {
         return ret;
     }
-    
+
     for (unsigned int a=0; a<intCount; ++a) {
-        ret.match0 += popcount(search0Int[a] & replay0Int[a]);
+        unsigned int m = popcount(search0Int[a] & replay0Int[a]);
+        ret.match0 += m;
     }
     for (unsigned int a=0; a<intCount; ++a) {
         ret.match1 += popcount(search1Int[a] & replay1Int[a]);
@@ -647,6 +756,7 @@ ReplayQueryResult * ReplayDb::Search(unsigned int offset, unsigned int numResult
     }
 
     this->CacheSearchBitField(numCards0, cardIndexes0, numCards1, cardIndexes1);
+
     unsigned int validCount = 0;
     for (unsigned int a=0; a<this->replayCount; ++a) {
         MatchResult match;

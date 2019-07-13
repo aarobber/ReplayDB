@@ -42,7 +42,11 @@ private:
     unsigned int cardBitFieldByteSize;
     StringTable stringTable;
 
+    void PrintIndexes(const unsigned int * cardIndexes, unsigned int count);
+    void PrintBitString(const unsigned int * bitString, unsigned int count);
+    void PrintCompareBitString(const unsigned int * bitStringA, const unsigned int * bitStringB, unsigned int count);
     
+    bool IsBigEndian();
     void CacheSearchBitField(unsigned int numCards0, unsigned int * cardIndexes0, unsigned int numCards1, unsigned int * cardIndexes1);
     MatchResult Match(unsigned int replayIndex, bool flipped, unsigned long long minDate, bool ranked, bool unranked, unsigned int sourcesBitField, unsigned int modesBitField, unsigned int resultBitField);
 
