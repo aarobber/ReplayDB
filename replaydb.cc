@@ -761,6 +761,7 @@ ReplayQueryResult * ReplayDb::Search(unsigned int offset, unsigned int numResult
     for (unsigned int a=0; a<this->replayCount; ++a) {
         MatchResult match;
 
+
         if (fromPlayer && fromOpponent) {
             MatchResult match0 = this->Match(a, false, minDate, ranked, unranked, sourcesBitField, modesBitField, resultBitField);
             MatchResult match1 = this->Match(a, true, minDate, ranked, unranked, sourcesBitField, modesBitField, flipResultBitField);
